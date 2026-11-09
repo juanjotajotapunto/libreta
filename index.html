@@ -583,6 +583,12 @@ function buildReport(k){
   <div class="panel"><h2>Los 10 gastos más grandes</h2>${top?`<div class="tablebox"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th class="r">Importe</th></tr></thead><tbody>${top}</tbody></table></div>`:'<p class="muted">Sin gastos.</p>'}</div>
   <div class="grid2"><div class="panel"><h2>Ingresos</h2>${incs?`<div class="tablebox"><table><tbody>${incs}</tbody></table></div>`:'<p class="muted">Sin ingresos.</p>'}</div>
   <div class="panel"><h2>Pagos recurrentes activos</h2>${rec.length?`<div class="tablebox"><table><tbody>${rec.slice(0,10).map(r=>`<tr><td>${esc(r.k)}</td><td class="r num">${fm(r.avg)}</td><td class="r num muted">${fm(r.yearly,1)}/año</td></tr>`).join("")}</tbody></table></div><p class="small muted">${fm(rec.reduce((a,r)=>a+r.yearly,0),1)} al año en total.</p>`:'<p class="muted">Aún no hay suficientes meses para detectarlos.</p>'}</div></div>
+  ${(()=>{const recent=k>=prevMonthKey();if(!recent||state.example)return "";let F;try{F=forecast(90)}catch(_){return ""}const fl=+fxCfg().floor||0;
+    const big=F.ev.filter(e=>Math.abs(e.amt)>=100).slice(0,8).map(e=>`<tr><td class="num">${fmtDate(e.date)}</td><td>${esc(e.desc)}</td><td class="r num ${e.amt<0?"neg":"pos"}">${fm(e.amt)}</td></tr>`).join("");
+    return `<div class="panel"><h2>Previsión de los próximos 3 meses</h2><p class="small muted" style="margin:0 0 8px">Calculada el ${new Date().toLocaleDateString("es-ES")} con tus pagos recurrentes, gastos previstos y tu gasto variable medio.</p>
+     <div class="tiles" style="grid-template-columns:repeat(4,minmax(0,1fr))"><div class="tile"><span class="lab">Hoy</span><span class="val">${fm(F.start,1)}</span></div><div class="tile"><span class="lab">En 30 días</span><span class="val">${fm(F.pts[30],1)}</span></div><div class="tile"><span class="lab">En 90 días</span><span class="val">${fm(F.pts[90],1)}</span></div><div class="tile"><span class="lab">Mínimo</span><span class="val ${F.min.v<fl?"neg":""}">${fm(F.min.v,1)}</span><span class="sub">el ${fmtDate(F.min.date)}${F.min.v<fl?" · por debajo de tu colchón":""}</span></div></div>
+     ${fxLineSVG([{v:F.pts,c:"var(--accent)",w:2}],F.labels,{zero:true,h:170,lines:fl?[{y:fl,c:"var(--warn)",t:"colchón"}]:[],label:"Previsión de saldo a 90 días"})}
+     ${big?`<div class="tablebox" style="margin-top:8px"><table><thead><tr><th>Fecha</th><th>Movimientos importantes previstos</th><th class="r">Importe</th></tr></thead><tbody>${big}</tbody></table></div>`:""}</div>`})()}
   <p class="small muted">Traspasos entre tus cuentas excluidos. Saldos en gris en la app = calculados. Inversión a precio de coste.</p>`;
 }
 function openReport(k){const ms=reportMonths();if(!ms.length){toast("Importa algún extracto para generar el informe");return}
@@ -1287,7 +1293,7 @@ function forecast(N){
     f.planned.forEach(p=>{if(p.date===ds){bal+=p.amt;ev.push({date:ds,desc:p.name,amt:p.amt,planned:true})}});
     bal=r2(bal);pts.push(bal);labels.push(fmtDate(ds).slice(0,5));if(bal<min.v)min={v:bal,date:ds,i}}
   return {start,daily:r2(daily),R,pts,labels,min,ev}}
-function fxForecast(){const f=fxCfg();const N=[90,180,365].includes(+f.fcDays)?+f.fcDays:90;const F=forecast(N);const fl=+f.floor||0;
+function fxForecast(){const f=fxCfg();const N=[90,180,365].includes(+f.fcDays)?+f.fcDays:365;const F=forecast(N);const fl=+f.floor||0;
   const st=F.min.v<0?"neg":F.min.v<fl?"warn":"ok";
   const chip=st==="neg"?'<span class="chip dup">Riesgo de descubierto</span>':st==="warn"?'<span class="chip maybe">Por debajo de tu colchón</span>':'<span class="chip ok">Sin problemas</span>';
   const evs=F.ev.slice(0,14).map(e=>`<tr><td class="num">${fmtDate(e.date)}</td><td>${esc(e.desc)}${e.planned?' <span class="chip xfer">previsto</span>':""}</td><td class="r num ${e.amt<0?"neg":"pos"}">${fm(e.amt)}</td></tr>`).join("");
