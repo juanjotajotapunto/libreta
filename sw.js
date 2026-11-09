@@ -1,6 +1,6 @@
 /* Libreta de Cuentas: funciona sin conexión. La app se actualiza sola cuando hay internet. */
-const APP = "libreta-app-v3", LIBS = "libreta-libs-v1";
-const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png"];
+const APP = "libreta-app-v4", LIBS = "libreta-libs-v1";
+const CORE = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-180.png", "./icons/icon-192.png", "./icons/icon-512.png"];
 const LIB_URLS = [
   "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
@@ -43,14 +43,16 @@ async function checkRemind(test) {
   const today = new Date(); const days = d => Math.floor((today - new Date(d + "T12:00:00")) / 864e5);
   const stale = ((r && r.accs) || []).map(a => ({ n: a.n, d: days(a.last) })).filter(a => a.d > 30).sort((a, b) => b.d - a.d);
   const fc = r && r.fc && r.fc.date >= today.toISOString().slice(0, 10) ? r.fc : null;
-  if (!test && ((!stale.length && !fc) || (r.lastNotif && Date.now() - r.lastNotif < 3 * 864e5))) return;
+  const rv = r && r.rev && r.rev !== r.revNotified && days(r.rev) >= -31 && days(r.rev) <= 0 ? r.rev : null;
+  if (!test && !rv && ((!stale.length && !fc) || (r.lastNotif && Date.now() - r.lastNotif < 3 * 864e5))) return;
   const fd = fc ? fc.date.split("-").reverse().join("/") : "";
   const lines = [];
+  if (rv) lines.push(`Tu hipoteca se revisa el ${rv.split("-").reverse().join("/")}: mira el euríbor y actualízalo en la Libreta.`);
   if (fc) lines.push(fc.kind === "neg" ? `Previsión: tu saldo podría quedar en negativo hacia el ${fd}.` : `Previsión: tu saldo bajará de tu colchón hacia el ${fd}.`);
   if (stale.length) lines.push(stale.map(a => `${a.n}: ${a.d} días sin extractos`).join("\n") + "\nDescárgalos en la banca online e impórtalos.");
   const body = test ? "Así te avisaré si una cuenta lleva más de 30 días sin extractos o si tu saldo va a bajar de tu colchón." : lines.join("\n");
-  await self.registration.showNotification("Libreta de Cuentas", { body, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "libreta-avisos", renotify: true, data: { url: fc && !stale.length ? "./#funciones" : "./#importar" } });
-  if (!test) await kv("put", "remind", Object.assign({}, r, { lastNotif: Date.now() }));
+  await self.registration.showNotification("Libreta de Cuentas", { body, icon: "icons/icon-192.png", badge: "icons/icon-192.png", tag: "libreta-avisos", renotify: true, data: { url: (fc || rv) && !stale.length ? "./#funciones" : "./#importar" } });
+  if (!test) await kv("put", "remind", Object.assign({}, r, { lastNotif: Date.now() }, rv ? { revNotified: rv } : {}));
 }
 self.addEventListener("periodicsync", e => { if (e.tag === "libreta-avisos") e.waitUntil(checkRemind(false)); });
 self.addEventListener("message", e => { if (e.data && e.data.type === "libreta-check") e.waitUntil(checkRemind(!!e.data.test)); });
