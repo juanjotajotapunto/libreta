@@ -362,7 +362,7 @@ body.locked{overflow:hidden}
 </main>
 <div class="toast" id="toast" hidden></div>
 <div id="lock"><div id="lock-card" class="panel"><p class="muted">Abriendo la Libreta…</p></div></div>
-<div id="report" hidden><div class="rep-bar"><div class="controls"><select id="rep-month" aria-label="Mes del informe"></select><button class="primary" id="rep-print">Guardar PDF / imprimir</button><button id="rep-close">Cerrar</button></div></div><div id="rep-body"></div></div>
+<div id="report" hidden><div class="rep-bar"><div class="controls"><select id="rep-month" aria-label="Mes del informe"></select><button class="primary" id="rep-print">1 · Guardar PDF</button><button id="rep-mail">2 · Enviar por correo</button><button id="rep-close">Cerrar</button></div><p class="small muted" style="margin:6px 0 0">Para enviarlo: guarda primero el PDF y luego pulsa «Enviar por correo»; se abre tu correo con el asunto y un resumen escritos, y solo tienes que adjuntar el PDF.</p></div><div id="rep-body"></div></div>
 
 <script>
 "use strict";
@@ -1525,6 +1525,16 @@ $("#rep-open").addEventListener("click",()=>openReport());$("#rep-remind-go").ad
 $("#rep-remind-x").addEventListener("click",()=>{state.cfg.repSkip=prevMonthKey();saveCfg().catch(()=>{});renderRepRemind()});
 $("#rep-month").addEventListener("change",e=>openReport(e.target.value));$("#rep-close").addEventListener("click",closeReport);
 $("#rep-print").addEventListener("click",()=>window.print());
+function reportSummary(k){const [y,m]=k.split("-").map(Number);const from=k+"-01",to=monthEnd(k);const L=realTxs().filter(t=>t.date>=from&&t.date<=to);const T=totals(L);
+  const inv=r2(-L.filter(isInvTx).reduce((a,t)=>a+t.amt,0));const C=byCat(L);const top=Object.entries(C).sort((a,b)=>b[1]-a[1]).slice(0,3);const goal=+(state.cfg.goal||0);const rate=T.inc>0?T.net/T.inc*100:null;
+  const lines=[`Resumen de ${monthLabel(k)}`,``,`Ingresos: ${fm(T.inc)}`,`Gastos: ${fm(T.exp)}`,`Ahorro neto: ${fm(T.net)}${rate!=null?` (tasa de ahorro ${rate.toFixed(1).replace(".",",")} %)`:""}`];
+  if(inv>0.5)lines.push(`A inversión: ${fm(inv)}`);{const RB=runningBalances(),ids=state.cfg.accounts.map(a=>a.id),prevTo=ymd(new Date(y,m-1,0));const sumAt=d=>ids.reduce((a,id)=>a+(balAt(RB,id,d)||0),0);const real=r2(sumAt(to)-sumAt(prevTo)+inv);
+    lines.push(`Ahorro real (variación del efectivo + inversión): ${fm(real)}`);if(goal>0)lines.push(`Objetivo de ahorro (${fm(goal,1)}): ${real>=goal?"cumplido":`no cumplido, faltaron ${fm(goal-real)}`}`)}
+  if(top.length)lines.push(``,`Donde más se gastó: ${top.map(([c,v])=>`${c} ${fm(v,1)}`).join(", ")}`);
+  lines.push(``,`El informe completo va en el PDF adjunto.`,`Enviado desde Libreta de Cuentas.`);return lines.join("\n")}
+$("#rep-mail").addEventListener("click",async()=>{const k=$("#rep-month").value;const subj=`Informe de ${monthLabel(k)} · Libreta de Cuentas`;const body=reportSummary(k);
+  if(navigator.share&&/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){try{await navigator.share({title:subj,text:subj+"\n\n"+body});toast("Adjunta el PDF que acabas de guardar");return}catch(e){if(e&&e.name==="AbortError")return}}
+  toast("Se abre tu correo: adjunta el PDF que acabas de guardar");setTimeout(()=>{location.href="mailto:?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(body)},400)});
 addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#report").hidden)closeReport()});
 $("#goal").addEventListener("change",async e=>{const raw=e.target.value.trim();let v=0;if(raw){v=parseAmount(raw);if(isNaN(v)||v<0){toast("Escribe una cantidad, por ejemplo 300");return}}
   state.cfg.goal=v>0?r2(v):0;if(!state.example)await saveCfg().catch(handleWriteErr);toast(v>0?`Objetivo: ${fm(v)} al mes`:"Objetivo quitado");renderResumen()});
