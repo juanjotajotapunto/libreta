@@ -266,7 +266,7 @@ body.locked{overflow:hidden}
   <!-- MOVIMIENTOS -->
   <section class="view" id="v-movimientos" hidden>
     <div class="controls">
-      <input type="search" id="m-q" placeholder="Buscar concepto o importe" style="flex:1 1 220px" aria-label="Buscar">
+      <input type="search" id="m-q" placeholder="Buscar concepto, nota o importe" style="flex:1 1 220px" aria-label="Buscar">
       <select id="m-acc" aria-label="Cuenta"></select>
       <select id="m-cat" aria-label="Categoría"></select>
       <select id="m-month" aria-label="Mes"></select>
@@ -320,6 +320,12 @@ body.locked{overflow:hidden}
         <div class="controls" style="margin-bottom:10px"><input type="text" id="rule-txt" placeholder="Texto del concepto, p. ej. GIMNASIO ALFA" style="flex:1 1 160px" aria-label="Texto de la regla"><select id="rule-cat" aria-label="Categoría de la regla"></select><button id="rule-add">Añadir</button></div>
         <div class="list" id="a-rules"></div>
       </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h"><h2>Mis categorías</h2><span class="small muted">Se suman a las de la app y puedes usarlas en movimientos, reglas y presupuestos</span></div>
+      <div class="controls" style="margin-bottom:10px"><input type="text" id="cc-name" maxlength="30" placeholder="Nombre, p. ej. Mascotas" style="flex:1 1 180px" aria-label="Nombre de la categoría"><select id="cc-kind" aria-label="Tipo de categoría"><option value="nec">Gasto necesario</option><option value="opt">Gasto prescindible</option><option value="inc">Ingreso</option></select><button class="primary" id="cc-add">Crear categoría</button></div>
+      <div class="list" id="cc-list"></div>
+      <p class="small muted" style="margin:8px 0 0">El tipo sirve para la regla 50/30/20 (necesario o prescindible). Para usarla, cambia la categoría en Movimientos o crea una regla.</p>
     </div>
     <div class="panel">
       <div class="panel-h"><h2>Historial de importaciones</h2><span class="small muted">Deshacer borra solo los movimientos que entraron con ese archivo</span></div>
@@ -392,6 +398,9 @@ function sim(a,b){const A=tokens(a),B=tokens(b);if(!A.size||!B.size)return 0;let
 
 /* ---------- categorías ---------- */
 const CATS=["Nómina","Otros ingresos","Supermercado","Restaurantes","Transporte","Combustible","Vivienda","Suministros","Suscripciones","Compras","Salud","Ocio","Viajes","Seguros","Impuestos y tasas","Comisiones","Efectivo","Bizum","Transferencias","Traspaso interno","Inversión","Intereses y dividendos","Otros gastos"];
+const customCats=()=>(state.cfg.customCats||[]);
+const allCats=()=>[...CATS.filter(c=>c!=="Otros gastos"),...customCats().map(c=>c.name),"Otros gastos"];
+const CC_KIND={nec:"Gasto necesario",opt:"Gasto prescindible",inc:"Ingreso"};
 const BUILTIN=[
  [/NOMINA|SALARIO|PAYROLL|PENSION/,"Nómina"],
  [/MERCADONA|CARREFOUR|LIDL|ALDI|\bDIA\b|EROSKI|ALCAMPO|HIPERCOR|CONSUM|SUPERMERC|MAS Y MAS|AHORRAMAS|EL ARBOL|SUPERCOR|COVIRAN|FAMILY CASH/,"Supermercado"],
@@ -867,7 +876,7 @@ function balCell(b){if(!b)return '<td class="r num muted">–</td>';const tip=b.
 function renderMovs(){
   const q=norm($("#m-q").value),acc=$("#m-acc").value,cat=$("#m-cat").value,mon=$("#m-month").value,ty=$("#m-type").value;
   let list=allTxs().filter(t=>(!acc||t.acc===acc)&&(!cat||t.cat===cat)&&(!mon||monthKey(t.date)===mon)&&(!ty||(ty==="xfer"?t.xfer:ty==="inv"?(t.cat==="Inversión"&&!t.xfer):ty==="exp"?(t.amt<0&&isFlow(t)):(t.amt>=0&&isFlow(t)))));
-  if(q)list=list.filter(t=>norm(t.desc).includes(q)||String(Math.abs(t.amt)).includes(q.replace(",",".")));
+  if(q)list=list.filter(t=>norm(t.desc).includes(q)||norm(t.note||"").includes(q)||String(Math.abs(t.amt)).includes(q.replace(",",".")));
   const RB=runningBalances();const ordOf=t=>(RB.get(t.id)||{}).ord||0;
   const grp=$("#m-group").value==="acc";const accIdx={};state.cfg.accounts.forEach((a,i)=>accIdx[a.id]=i);
   const byDate=(a,b)=>a.date<b.date?1:a.date>b.date?-1:ordOf(b)-ordOf(a);
@@ -876,16 +885,16 @@ function renderMovs(){
   const cur=currentBalances(RB);const curIds=Object.keys(cur);const totNow=r2(curIds.reduce((a,id)=>a+cur[id].v,0));
   const T=totals(list);
   $("#m-sum").innerHTML=`${list.length} movimientos · ingresos ${fm(T.inc)} · gastos ${fm(T.exp)} · neto ${fm(T.net)}`+(curIds.length>1?` · <strong>saldo total actual ${fm(totNow)}</strong>`:"");
-  const NC=showTot?8:7;
-  $("#m-head").innerHTML=`<th>Fecha</th><th>Cuenta</th><th>Concepto</th><th>Categoría</th><th class="r">Importe</th><th class="r">Saldo</th>${showTot?'<th class="r" title="Suma de todas tus cuentas tras este movimiento. Exacto al cierre de cada día.">Total cuentas</th>':""}<th></th>`;
-  const catOpts=c=>CATS.map(x=>`<option${x===c?" selected":""}>${esc(x)}</option>`).join("");
+  const NC=showTot?9:8;
+  $("#m-head").innerHTML=`<th>Fecha</th><th>Cuenta</th><th>Concepto</th><th>Categoría</th><th class="r">Importe</th><th class="r">Saldo</th>${showTot?'<th class="r" title="Suma de todas tus cuentas tras este movimiento. Exacto al cierre de cada día.">Total cuentas</th>':""}<th></th><th>Observaciones</th>`;
+  const catOpts=c=>allCats().map(x=>`<option${x===c?" selected":""}>${esc(x)}</option>`).join("");
   const cnt={};list.forEach(t=>cnt[t.acc]=(cnt[t.acc]||0)+1);
   const col=grp?mColl:new Set();let prevAcc=null,shown=0,rest=0;const rows=[];
   for(const t of list){
     const hidden=col.has(t.acc);
     if(grp&&t.acc!==prevAcc){prevAcc=t.acc;if(hidden||shown<mLimit){const ga=accOf(t.acc),c=cur[t.acc];rows.push(`<tr class="grp"><td colspan="${NC}"><button type="button" class="grp-tog" data-acc="${esc(t.acc)}" aria-expanded="${col.has(t.acc)?"false":"true"}"><span class="chev" aria-hidden="true">▾</span><span class="accdot" style="background:${esc(ga.color)}"></span><strong>${esc(ga.name)}</strong></button><span class="muted"> · ${cnt[t.acc]} movimiento${cnt[t.acc]===1?"":"s"}</span>${c?` · saldo actual <span class="num"><strong>${fm(c.v)}</strong></span>${c.src==="banco"?"":'<span class="muted"> (calculado)</span>'}`:""}</td></tr>`)}}
     if(hidden)continue;if(shown>=mLimit){rest++;continue}shown++;
-    const a=accOf(t.acc);rows.push(`<tr data-id="${esc(t.id)}"><td class="num">${fmtDate(t.date)}</td><td><span class="accdot" style="background:${esc(a.color)}"></span>${esc(a.name)}</td><td class="desc">${esc(t.desc)}${t.xfer?' <span class="chip xfer">traspaso</span>':""}</td><td><select class="m-catsel" aria-label="Categoría">${catOpts(t.cat)}</select></td><td class="r num ${t.amt<0?"neg":"pos"}">${fm(t.amt)}</td>${balCell(RB.get(t.id))}${showTot?`<td class="r num muted">${TOT.has(t.id)?fm(TOT.get(t.id)):"–"}</td>`:""}<td><button class="link m-del" aria-label="Borrar movimiento">Borrar</button></td></tr>`);
+    const a=accOf(t.acc);rows.push(`<tr data-id="${esc(t.id)}"><td class="num">${fmtDate(t.date)}</td><td><span class="accdot" style="background:${esc(a.color)}"></span>${esc(a.name)}</td><td class="desc">${esc(t.desc)}${t.xfer?' <span class="chip xfer">traspaso</span>':""}</td><td><select class="m-catsel" aria-label="Categoría">${catOpts(t.cat)}</select></td><td class="r num ${t.amt<0?"neg":"pos"}">${fm(t.amt)}</td>${balCell(RB.get(t.id))}${showTot?`<td class="r num muted">${TOT.has(t.id)?fm(TOT.get(t.id)):"–"}</td>`:""}<td><button class="link m-del" aria-label="Borrar movimiento">Borrar</button></td><td><input type="text" class="m-note" maxlength="200" value="${esc(t.note||"")}" placeholder="Añadir nota" aria-label="Observaciones" title="${esc(t.note||"")}" style="width:16em"></td></tr>`);
   }
   $("#m-body").innerHTML=rows.join("")||`<tr><td colspan="${NC}" class="empty">No hay movimientos con estos filtros</td></tr>`;
   $("#m-more").innerHTML=rest?`<button id="m-morebtn">Ver ${Math.min(200,rest)} más</button>`:"";
@@ -895,10 +904,10 @@ function renderMovs(){
 function refreshFilters(){
   accOptions($("#m-acc"),true);accOptions($("#r-acc"),true);accOptions($("#i-acc"),false);
   const keepCat=$("#m-cat").value,keepM=$("#m-month").value;
-  $("#m-cat").innerHTML='<option value="">Todas las categorías</option>'+CATS.map(c=>`<option>${esc(c)}</option>`).join("");$("#m-cat").value=keepCat;
+  $("#m-cat").innerHTML='<option value="">Todas las categorías</option>'+allCats().map(c=>`<option>${esc(c)}</option>`).join("");$("#m-cat").value=keepCat;
   const ms=[...new Set(allTxs().map(t=>monthKey(t.date)))].sort().reverse();
   $("#m-month").innerHTML='<option value="">Todos los meses</option>'+ms.map(k=>`<option value="${k}">${monthLabel(k)}</option>`).join("");$("#m-month").value=ms.includes(keepM)?keepM:"";
-  $("#rule-cat").innerHTML=CATS.map(c=>`<option>${esc(c)}</option>`).join("");
+  $("#rule-cat").innerHTML=allCats().map(c=>`<option>${esc(c)}</option>`).join("");
 }
 function findTx(id){for(const [k,arr] of Object.entries(state.months)){const t=arr.find(x=>x.id===id);if(t)return [k,t]}return [null,null]}
 
@@ -1131,7 +1140,7 @@ function renderPreview(){
   $("#i-stats").innerHTML=`<span class="chip new">${c.new} nuevos</span><span class="chip dup">${c.dup} ya estaban</span><span class="chip maybe">${c.maybe} posibles duplicados</span>`;
   const bc=balanceCheck(L);
   $("#i-check").textContent=[imp.signNote||"",bc?(bc.ok===bc.n?`El saldo cuadra en las ${bc.n} líneas.`:`El saldo cuadra en ${bc.ok} de ${bc.n} líneas: revisa signos o columnas.`):"Este archivo no trae saldo; la detección usa fecha, importe y concepto."].filter(Boolean).join(" ");
-  const catOpts=cc=>CATS.map(x=>`<option${x===cc?" selected":""}>${esc(x)}</option>`).join("");
+  const catOpts=cc=>allCats().map(x=>`<option${x===cc?" selected":""}>${esc(x)}</option>`).join("");
   $("#i-body").innerHTML=L.map((t,i)=>`<tr data-i="${i}" class="${t.include?"":"skip"}"><td><input type="checkbox" class="i-inc" ${t.include?"checked":""} aria-label="Incluir"></td><td><span class="chip ${t.status}">${t.status==="new"?"Nuevo":t.status==="dup"?"Ya estaba":"¿Duplicado?"}</span>${t.near?`<div class="small muted">parece: ${fmtDate(t.near.date)} ${esc(t.near.desc.slice(0,28))}</div>`:""}</td><td class="num">${fmtDate(t.date)}</td><td class="desc">${esc(t.desc)}</td><td><select class="i-cat" aria-label="Categoría">${catOpts(t.cat)}</select></td><td class="r num ${t.amt<0?"neg":"pos"}">${fm(t.amt)}</td><td class="r num muted">${t.bal==null?"":fm(t.bal)}</td></tr>`).join("");
   const n=L.filter(t=>t.include).length;$("#i-save").textContent=`Añadir ${n} movimiento${n===1?"":"s"}`;$("#i-save").disabled=!n;
   $("#i-prev").hidden=false;
@@ -1139,7 +1148,7 @@ function renderPreview(){
 async function commitImport(){
   const acc=$("#i-acc").value;const sel=imp.txs.filter(t=>t.include);if(!sel.length)return;
   $("#i-save").disabled=true;
-  const fresh=sel.map(t=>{const o={id:uid(),acc,date:t.date,desc:t.desc,amt:t.amt,bal:t.bal,cat:t.cat,seq:t.seq,imp:imp.id};for(const k of ["ext","units","isin","asset","kind"])if(t[k]!=null)o[k]=t[k];return o});
+  const fresh=sel.map(t=>{const o={id:uid(),acc,date:t.date,desc:t.desc,amt:t.amt,bal:t.bal,cat:t.cat,seq:t.seq,imp:imp.id};for(const k of ["ext","units","isin","asset","kind","note"])if(t[k]!=null)o[k]=t[k];return o});
   if(state.example){state.example=false}
   const touched=new Set();
   for(const t of fresh){const k=monthKey(t.date);(state.months[k]=state.months[k]||[]).push(t);touched.add(k)}
@@ -1152,7 +1161,10 @@ async function commitImport(){
 }
 
 /* ---------- ajustes ---------- */
-function renderAjustes(){
+function renderCustomCats(){const box=$("#cc-list");if(!box)return;const cc=customCats();
+  box.innerHTML=cc.length?cc.map((c,i)=>{const n=realTxs().filter(t=>t.cat===c.name).length;return `<div class="row" data-i="${i}"><span class="chip xfer">${esc(CC_KIND[c.kind]||"Gasto")}</span><span class="cc-name" style="overflow-wrap:anywhere"><strong>${esc(c.name)}</strong> <span class="small muted">${n} movimiento${n===1?"":"s"}</span></span><span class="controls" style="gap:4px"><button class="link cc-ren">Renombrar</button><button class="link cc-del">Borrar</button></span></div>`}).join("")
+    :'<div class="empty small">Aún no has creado categorías. Ejemplos: Mascotas, Hijos, Coche, Formación, Regalos.</div>'}
+function renderAjustes(){renderCustomCats();
   const anc=state.cfg.anchors||{};
   $("#a-accs").innerHTML=state.cfg.accounts.map(a=>`<div class="acc-edit" data-id="${esc(a.id)}"><input type="color" value="${esc(a.color)}" class="a-color" aria-label="Color"><span style="display:flex;flex-wrap:wrap;gap:8px;min-width:0"><input type="text" value="${esc(a.name)}" class="a-name" aria-label="Nombre de la cuenta" style="flex:1 1 auto"><input type="text" class="a-last4" inputmode="numeric" maxlength="4" placeholder="4 últimos" value="${esc(a.last4||"")}" aria-label="Últimos 4 dígitos de la cuenta" style="width:5.5em"><select class="a-bank" aria-label="Banco">${[["caixa","CaixaBank"],["tr","Trade Republic"],["otro","Otro"]].map(([v,l])=>`<option value="${v}"${(a.bank||"otro")===v?" selected":""}>${l}</option>`).join("")}</select></span><span class="small muted">${realTxs().filter(t=>t.acc===a.id).length} mov.</span>${!hasBankBal(a.id)&&realTxs().some(t=>t.acc===a.id)?`<label class="small muted" style="grid-column:2/-1;display:flex;flex-wrap:wrap;gap:8px;align-items:center">El extracto no trae saldo. Saldo real hoy: <input type="text" inputmode="decimal" class="a-anchor num" value="${anc[a.id]?String(anc[a.id].bal).replace(".",","):""}" placeholder="p. ej. 1.250,40" style="width:8em;text-align:right">${anc[a.id]?`<span>indicado el ${fmtDate(anc[a.id].date)}</span>`:""}</label>`:""}</div>`).join("");
   $("#a-rules").innerHTML=state.cfg.rules.length?state.cfg.rules.map((r,i)=>`<div class="row"><span class="chip xfer">${esc(r.cat)}</span><span style="overflow-wrap:anywhere">contiene «${esc(r.match)}»</span><button class="link r-del" data-i="${i}">Quitar</button></div>`).join(""):'<div class="empty small">Aún no hay reglas. También puedes crearlas al cambiar la categoría de un movimiento.</div>';
@@ -1243,7 +1255,7 @@ function renderBackup(){
   const parts=stale.map(k=>days(k)==null?`nunca has guardado copia en ${name[k]}`:`hace ${days(k)} días de tu última copia en ${name[k]}`);
   $("#bk-remind-txt").innerHTML=`<strong>Copia de seguridad pendiente.</strong> ${esc(parts.join(" y ").replace(/^./,c=>c.toUpperCase()))}.`;
 }
-function csvOf(list){const RB=runningBalances();const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';return "﻿fecha;cuenta;concepto;categoria;importe;saldo;origen_saldo;traspaso\n"+list.map(t=>{const b=RB.get(t.id);return [t.date,q(accOf(t.acc).name),q(t.desc),q(t.cat),String(t.amt).replace(".",","),b?String(b.v).replace(".",","):"",b?(b.src==="banco"?"banco":"calculado"):"",t.xfer?"si":""].join(";")}).join("\n")}
+function csvOf(list){const RB=runningBalances();const q=s=>'"'+String(s??"").replace(/"/g,'""')+'"';return "﻿fecha;cuenta;concepto;categoria;importe;saldo;origen_saldo;traspaso;observaciones\n"+list.map(t=>{const b=RB.get(t.id);return [t.date,q(accOf(t.acc).name),q(t.desc),q(t.cat),r2(t.amt).toFixed(2).replace(".",","),b?r2(b.v).toFixed(2).replace(".",","):"",b?(b.src==="banco"?"banco":"calculado"):"",t.xfer?"si":"",q(t.note||"")].join(";")}).join("\n")}
 
 /* ======================= FUNCIONALIDADES ======================= */
 const FX_DEF_CATS=["Restaurantes","Compras","Combustible"];
@@ -1319,7 +1331,7 @@ function fxBudget(){const f=fxCfg();const B=budgetState();const col={green:"var(
   const rows=B.map(x=>`<div class="fx-bud"><div class="fx-bud-h"><span><span class="dot" style="background:${col[x.st]}"></span><strong>${esc(x.c)}</strong></span><span class="num">${fm(x.s)} / ${fxInp("budget:"+x.c,x.b||"","límite",6)} € <button class="link" data-act="bud-del" data-c="${esc(x.c)}">Quitar</button></span></div>
     <div class="rbar" style="height:9px"><span style="width:${Math.min(100,x.p||0).toFixed(1)}%;background:${col[x.st]}"></span></div>
     <div class="small muted">${x.b?`${pctAbs(x.p,0)} gastado · previsión a fin de mes ${fm(x.proj,1)}${x.proj>x.b?` (${fm(x.proj-x.b,1)} por encima)`:""}`:"Escribe un límite mensual"}</div></div>`).join("");
-  const free=CATS.filter(c=>!(c in f.budgets)&&!["Nómina","Otros ingresos","Traspaso interno","Inversión","Intereses y dividendos","Transferencias"].includes(c));
+  const free=allCats().filter(c=>!(c in f.budgets)&&!["Nómina","Otros ingresos","Traspaso interno","Inversión","Intereses y dividendos","Transferencias"].includes(c));
   const ks=fullMonths(3);const avg=Object.fromEntries(Object.keys(f.budgets).map(c=>[c,avgPer(ks,L=>byCat(L)[c]||0)]));
   return `<p class="small muted">Mes en curso. Verde: vas bien · ámbar: más del 80 % o vas camino de pasarte · rojo: te has pasado. Los avisos también salen en Resumen.</p>${rows}
   <p class="small muted">Media de los últimos ${ks.length} meses: ${Object.entries(avg).map(([c,v])=>`${esc(c)} ${fm(v,1)}`).join(" · ")||"sin datos"}. Un buen límite inicial es un 10 % por debajo de tu media.</p>
@@ -1431,7 +1443,7 @@ function fxTax(){const f=fxCfg();const ys=[...new Set(allTxs().map(t=>t.date.sli
 function fx503020(){const ks=fullMonths(3);if(!ks.length)return '<p class="muted small">Hace falta al menos un mes completo de datos.</p>';
   const inc=avgPer(ks,L=>totals(L).inc),exp=avgPer(ks,L=>totals(L).exp);const fixed=-recurItems().filter(r=>r.amt<0&&!r.inv).reduce((a,r)=>a+r.amt,0);const vari=Math.max(0,exp-fixed);
   const cat=avgPer(ks,L=>{const c=byCat(L);return 0}),bc=ks.map(k=>byCat(allTxs().filter(t=>monthKey(t.date)===k)));const sumC=list=>bc.reduce((a,c)=>a+list.reduce((s,k)=>s+(c[k]||0),0),0)/bc.length;
-  const needs=sumC(NEEDS),wants=exp-needs,save=inc-exp;const P=v=>inc>0?v/inc*100:0;
+  const needs=sumC([...NEEDS,...customCats().filter(c=>c.kind==="nec").map(c=>c.name)]),wants=exp-needs,save=inc-exp;const P=v=>inc>0?v/inc*100:0;
   const bar=(lab,v,target,col)=>`<div class="fx-bud"><div class="fx-bud-h"><span><strong>${lab}</strong> <span class="small muted">referencia ${target} %</span></span><span class="num">${fm(v,1)} · ${pctAbs(P(v),0)}</span></div><div class="rbar" style="height:9px;position:relative"><span style="width:${Math.max(0,Math.min(100,P(v))).toFixed(1)}%;background:${col}"></span><i class="tgt" style="left:${target}%"></i></div></div>`;
   return `<div class="tiles" style="grid-template-columns:repeat(3,minmax(0,1fr))"><div class="tile"><span class="lab">Ingreso medio</span><span class="val pos">${fm(inc,1)}</span><span class="sub">últimos ${ks.length} meses</span></div>
    <div class="tile"><span class="lab">Gastos fijos</span><span class="val">${fm(fixed,1)}</span><span class="sub">${pctAbs(P(fixed),0)} del ingreso, comprometido cada mes</span></div>
@@ -1540,6 +1552,9 @@ $("#goal").addEventListener("change",async e=>{const raw=e.target.value.trim();l
   state.cfg.goal=v>0?r2(v):0;if(!state.example)await saveCfg().catch(handleWriteErr);toast(v>0?`Objetivo: ${fm(v)} al mes`:"Objetivo quitado");renderResumen()});
 $("#m-more").addEventListener("click",e=>{if(e.target.id==="m-morebtn"){mLimit+=200;renderMovs()}});
 $("#m-body").addEventListener("change",async e=>{
+  if(e.target.classList.contains("m-note")){const id=e.target.closest("tr").dataset.id;const v=e.target.value.trim().slice(0,200);e.target.title=v;
+    if(state.example){const t=EXAMPLE.find(x=>x.id===id);if(t){if(v)t.note=v;else delete t.note}return}
+    const [k,t]=findTx(id);if(!t)return;if(v)t.note=v;else delete t.note;try{await saveMonth(k);toast(v?"Observación guardada":"Observación borrada")}catch(err){handleWriteErr(err)}return}
   if(!e.target.classList.contains("m-catsel"))return;const id=e.target.closest("tr").dataset.id;
   if(state.example){const t=EXAMPLE.find(x=>x.id===id);if(t)t.cat=e.target.value;renderResumen();return}
   const [k,t]=findTx(id);if(!t)return;t.cat=e.target.value;try{await saveMonth(k)}catch(err){handleWriteErr(err)}
@@ -1587,6 +1602,22 @@ $("#a-accs").addEventListener("change",async e=>{if(!e.target.classList.contains
 $("#rule-add").addEventListener("click",async()=>{const m=$("#rule-txt").value.trim();if(!m)return;const cat=$("#rule-cat").value;state.cfg.rules.unshift({match:m,cat});
   const ks=new Set();realTxs().forEach(t=>{if(!t.xfer&&norm(t.desc).includes(norm(m))&&t.cat!==cat){t.cat=cat;ks.add(monthKey(t.date))}});
   $("#rule-txt").value="";try{await saveMonths([...ks]);await saveCfg()}catch(_){};toast(`Regla añadida${ks.size?" y aplicada":""}`);renderAll()});
+const ccValid=(name,except)=>{const n=name.trim();if(!n)return "Escribe un nombre";if(n.length>30)return "Máximo 30 caracteres";if(allCats().some(c=>c.toLowerCase()===n.toLowerCase()&&c!==except))return "Ya existe una categoría con ese nombre";return ""};
+$("#cc-add").addEventListener("click",async()=>{const n=$("#cc-name").value.trim();const err=ccValid(n);if(err){toast(err);return}
+  state.cfg.customCats=[...customCats(),{name:n,kind:$("#cc-kind").value}];$("#cc-name").value="";await saveCfg().catch(handleWriteErr);toast(`Categoría «${n}» creada`);renderAll()});
+$("#cc-name").addEventListener("keydown",e=>{if(e.key==="Enter")$("#cc-add").click()});
+async function renameCat(from,to){const ks=new Set();realTxs().forEach(t=>{if(t.cat===from){t.cat=to;ks.add(monthKey(t.date))}});
+  state.cfg.rules.forEach(r=>{if(r.cat===from)r.cat=to});const f=state.cfg.fx;if(f&&f.budgets&&from in f.budgets){f.budgets[to]=f.budgets[from];delete f.budgets[from]}
+  try{await saveMonths([...ks]);await saveCfg()}catch(_){}return ks.size}
+$("#cc-list").addEventListener("click",async e=>{const row=e.target.closest(".row");if(!row)return;const i=+row.dataset.i;const c=customCats()[i];if(!c)return;
+  if(e.target.classList.contains("cc-ren")){const sp=row.querySelector(".cc-name");sp.innerHTML=`<span class="controls" style="gap:6px"><input type="text" class="cc-new" maxlength="30" value="${esc(c.name)}" style="flex:1 1 140px"><select class="cc-k">${Object.entries(CC_KIND).map(([k,l])=>`<option value="${k}"${k===c.kind?" selected":""}>${l}</option>`).join("")}</select><button class="primary cc-save">Guardar</button><button class="cc-cancel">Cancelar</button></span>`;sp.querySelector(".cc-new").focus();return}
+  if(e.target.classList.contains("cc-cancel")){renderCustomCats();return}
+  if(e.target.classList.contains("cc-save")){const n=row.querySelector(".cc-new").value.trim();const err=ccValid(n,c.name);if(err){toast(err);return}const old=c.name;const list=customCats().slice();list[i]={name:n,kind:row.querySelector(".cc-k").value};state.cfg.customCats=list;
+    const moved=n!==old?await renameCat(old,n):(await saveCfg().catch(handleWriteErr),0);toast(n!==old?`Categoría renombrada a «${n}»`:"Guardado");renderAll();return}
+  if(e.target.classList.contains("cc-del")){const n=realTxs().filter(t=>t.cat===c.name).length;const sp=row.querySelector(".controls");sp.outerHTML=`<span class="confirm small">${n?(n===1?"Su movimiento pasará":`Sus ${n} movimientos pasarán`)+" a «Otros gastos» u «Otros ingresos».":"¿Borrar?"} <button class="danger cc-yes">Borrar</button><button class="cc-cancel">No</button></span>`;return}
+  if(e.target.classList.contains("cc-yes")){const ks=new Set();realTxs().forEach(t=>{if(t.cat===c.name){t.cat=t.amt>=0?"Otros ingresos":"Otros gastos";ks.add(monthKey(t.date))}});
+    state.cfg.rules=state.cfg.rules.filter(r=>r.cat!==c.name);const f=state.cfg.fx;if(f&&f.budgets)delete f.budgets[c.name];state.cfg.customCats=customCats().filter((_,k)=>k!==i);
+    try{await saveMonths([...ks]);await saveCfg()}catch(_){}toast(`Categoría «${c.name}» borrada`);renderAll()}});
 $("#a-rules").addEventListener("click",async e=>{if(!e.target.classList.contains("r-del"))return;state.cfg.rules.splice(+e.target.dataset.i,1);await saveCfg().catch(handleWriteErr);renderAjustes()});
 $("#a-imports").addEventListener("click",e=>{const b=e.target.closest(".imp-undo");if(!b)return;const id=b.dataset.id;const row=b.parentElement;
   b.outerHTML=`<span class="confirm small">¿Borrar sus movimientos? <button class="danger u-yes">Sí</button><button class="u-no">No</button></span>`;
